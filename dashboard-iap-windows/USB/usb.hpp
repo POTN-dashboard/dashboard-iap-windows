@@ -29,6 +29,11 @@ public:
     static const UINT8 CPU_GPU_PACK = 0x22;
     static const UINT8 ACK_PACK = 0x33;
     static const UINT8 DATA_PACK = 0x44;
+    static const UINT8 UPGRED_PACK = 0x55;
+    static const UINT8 UPGRED_READY_PACK = 0x66;
+    static const UINT8 UPGRED_INFORM_PACK = 0x77;
+    static const UINT8 UPGRED_DATA_PACK = 0x88;
+    static const UINT8 UPGRED_STATUS_PACK = 0X99;
 
 public:
     Connector();
@@ -44,4 +49,29 @@ private:
     std::runtime_error error(const char *msg);
 };
 
+
+
+class Filer 
+{
+public:
+    UINT8 Buffer[128 * 1024];
+    UINT8 Index;
+    UINT8 Size;
+    UINT8 Checksum;
+
+
+public:
+    Filer();
+    ~Filer();
+    bool getBin(const char* path);
+
+};
+
+
+
+
 } // namespace USB
+
+
+
+

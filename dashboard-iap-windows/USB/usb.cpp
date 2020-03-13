@@ -2,6 +2,7 @@
 #include <stdexcept>
 #include <string>
 #include <comdef.h>
+#include <iostream>
 
 #include "usb.hpp"
 
@@ -91,7 +92,7 @@ Error USB::Connector::Write(BYTE *buf, int len)
     BYTE writeBuf[MAX_PACK_SIZE + 1];
     writeBuf[0] = 0;
     memcpy(writeBuf + 1, buf, len);
-    int res = hid_write(dev, writeBuf, len + 1);
+    int res = hid_write(dev, writeBuf, (size_t)len + 1);
     if (-1 == res)
     {
         wprintf(L"[USB] Write fail: %ls\n", hid_error(dev));
@@ -99,4 +100,46 @@ Error USB::Connector::Write(BYTE *buf, int len)
     }
     // wprintf(L"[USB] Write %d bytes\n", res);
     return Error::OK;
+}
+
+
+USB::Filer::Filer()
+{
+    memset(Buffer, 0, sizeof(Buffer));
+    Index = 0;
+    Size = 0;
+    Checksum = 0;
+}
+
+
+USB::Filer::~Filer()
+{
+
+}
+
+bool Filer::getBin(const char* path)
+{
+    FILE* fp = NULL;
+    UINT8 checksum = 0;
+    errno_t err = 0;
+
+    if ((err = fopen_s(&fp, path, "rb")) != 0) {      //二进制可读打开
+        std::cout << "BIN文件打开失败,请确认需要BIN文件在exe文件的同一个目录下" << std::endl;
+        system("pause");       // DOS调用 黑框框不会闪退 
+        exit(0);
+    }
+    if (fp != 0) {                  //文件打开成功
+        fseek(fp, 0L, SEEK_END);
+        Size = ftell(fp)-1;    //获取文件大小
+        rewind(fp);		//重新恢复位置指针的位置，回到文件的开头
+        printf("本次升级的bin文件一共有%d个字节\n", Size);
+        fread(Buffer, 1, Size, fp);
+
+        for(UINT32 i = 0; i < Size; i++){
+            Checksum += Buffer[i];
+        }
+        fclose(fp);
+    }
+
+
 }

@@ -12,17 +12,20 @@
 #define uchar unsigned char
 #define uint unsigned int
 const char* path = "./POTN.bin";
-uchar buffer[128 * 1024];   
-uint len = 0;
+
+uchar buffer[128 * 1024];   //需要升级的二进制文件
+uint len = 0;               //
 
 void init();
 void cleanAndExit(int sig);
-void gain_bin(const char* path);
+bool informUpgrepStart(USB::Connector& usb);
+void controlLoop(USB::Connector& usb, USB::Filer& file);
 
 int main(void)
 {     
     std::cout << "Hello World!\n";
-    gain_bin(path);
+
+
     while (1);
     return 0;
 }
@@ -46,33 +49,102 @@ void cleanAndExit(int sig)
     exit(sig);
 }
 
-void gain_bin(const char *path)
+
+void controlLoop(USB::Connector& usb,USB::Filer& file) 
 {
-    FILE* fp = NULL;
-    
-    uchar checksum = 0;
-    errno_t err = 0;
-
-    if((err = fopen_s(&fp,path,"rb")) != 0){      //二进制可读可写打开
-        std::cout << "文件打开失败" << std::endl;
-        system("pause");       // DOS调用 黑框框不会闪退 
-        exit(0);
+    while (true) 
+    {
+        if (!usb.Connect())
+        {
+            puts("Waiting for device...");
+            Sleep(1000);
+            continue;
+        }
+        if(!informUpgrepStart(usb))
+        {
+            puts("device be missing...");
+            Sleep(1000);
+            continue;
+        }
     }
-    if (fp != 0) {                  //文件打开成功
-        fseek(fp, 0L, SEEK_END);
-        len = ftell(fp);    //获取文件大小
-        rewind(fp);		//重新恢复位置指针的位置，回到文件的开头
-        printf("本次升级的bin文件一共有%d个字节\n", len);
-        fread(&buffer,1,len,fp);
 
-        //for(uint i = 0; i < len; i++){
-        //    checksum += buffer[i];
-        //}
-        fclose(fp);
+}
+
+bool informUpgrepStart(USB::Connector& usb)
+{
+    BYTE Receive[USB::Connector::MAX_PACK_SIZE];
+    BYTE Send[USB::Connector::MAX_PACK_SIZE];
+    memset(Send,0,sizeof(Send));
+    Send[0] = USB::Connector::UPGRED_PACK;
+    while(true)
+    {
+        Sleep(1000);       
+        int actualLen = 0;
+        USB::Error err = usb.Read(Receive,sizeof(Receive),&actualLen);
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        if(USB::Error::OK == err)
+        {
+            if (usb.UPGRED_READY_PACK == Receive[0])
+            {
+                return true;
+            }
+            else
+            {
+                continue;
+            }
+        }
+
+        err = usb.Write(Send, sizeof(Send));
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        if (USB::Error::OK != err)
+        {
+            continue;
+        }
+    }
+}
+
+bool UpgrepData(USB::Connector& usb, USB::Filer& file)
+{
+    USB::Error err;
+    BYTE Receive[USB::Connector::MAX_PACK_SIZE];
+    BYTE Send[USB::Connector::MAX_PACK_SIZE];
+    int actualLen = 0;
+    Send[0] = usb.UPGRED_DATA_PACK;
+
+    while (true)
+    {
+        memcpy(file.Buffer + file.Index, Send + 1, sizeof(Send) - 1);
+        file.Index += (sizeof(Send) - 1);
+        err = usb.Write(Send, sizeof(Send));
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+
+        err = usb.Read(Receive, sizeof(Receive), &actualLen);
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        if (USB::Error::TIMEOUT == err)     
+        {
+            file.Index -= (sizeof(Send) - 1);  //超时说明上一包没有收到 所以重新发送
+            continue;
+        }
+
     }
 
 
 }
+
+
+
 
 
 // Run program: Ctrl + F5 or Debug > Start Without Debugging menu
