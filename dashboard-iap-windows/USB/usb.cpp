@@ -47,19 +47,20 @@ bool USB::Connector::Connect()
 {
     hid_device_info *devs = hid_enumerate(VID, PID);
     hid_device_info *curDev = devs;
-    char path[128];
+    char path[6400];
     path[0] = 0;
     while (NULL != curDev)
-    {
-        if (INTERFACE_INDEX == curDev->interface_number)
+    {                        //windows中，只有一个接口时，接口编号的变量无效，为-1
+        if (INTERFACE_INDEX == curDev->interface_number || -1 == curDev->interface_number) 
         {
-            strcpy_s(path,strlen(curDev->path), curDev->path);
+            strcpy_s(path, curDev->path);
             break;
         }   
         curDev = curDev->next;
     }
     if (0 == path[0])
     {
+        hid_free_enumeration(devs);
         return false;
     }
     dev = hid_open_path(path);
@@ -67,6 +68,7 @@ bool USB::Connector::Connect()
     {
         throw error("Open device fail");
     }
+    hid_free_enumeration(devs);
     return true;
 }
 
@@ -109,6 +111,7 @@ USB::Filer::Filer()
     Index = 0;
     Size = 0;
     Checksum = 0;
+    PackNum = 1;
 }
 
 
@@ -120,26 +123,33 @@ USB::Filer::~Filer()
 bool Filer::getBin(const char* path)
 {
     FILE* fp = NULL;
-    UINT8 checksum = 0;
     errno_t err = 0;
 
+    memset(Buffer, 0, sizeof(Buffer));          //每次读取文件都重新对类的变量 初始化
+    Index = 0;
+    Size = 0;
+    Checksum = 0;
+    PackNum = 1;
+
     if ((err = fopen_s(&fp, path, "rb")) != 0) {      //二进制可读打开
-        std::cout << "BIN文件打开失败,请确认需要BIN文件在exe文件的同一个目录下" << std::endl;
+        puts( "make sure the bin file are the same place with exe " );
         system("pause");       // DOS调用 黑框框不会闪退 
         exit(0);
+        return false;
     }
     if (fp != 0) {                  //文件打开成功
         fseek(fp, 0L, SEEK_END);
-        Size = ftell(fp)-1;    //获取文件大小
+        Size = ftell(fp);    //获取文件大小
         rewind(fp);		//重新恢复位置指针的位置，回到文件的开头
-        printf("本次升级的bin文件一共有%d个字节\n", Size);
+        printf("this bin is total %d bytes\n", Size);
         fread(Buffer, 1, Size, fp);
 
         for(UINT32 i = 0; i < Size; i++){
-            Checksum += Buffer[i];
+            Checksum += Buffer[i];          //计算校验和
         }
+        Checksum = ~Checksum + 1;       // 取补码
         fclose(fp);
     }
-
+    return true;
 
 }

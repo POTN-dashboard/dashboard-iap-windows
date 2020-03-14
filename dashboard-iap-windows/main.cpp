@@ -13,21 +13,30 @@
 #define uint unsigned int
 const char* path = "./POTN.bin";
 
-uchar buffer[128 * 1024];   //需要升级的二进制文件
-uint len = 0;               //
 
 void init();
 void cleanAndExit(int sig);
 bool informUpgrepStart(USB::Connector& usb);
+bool upgrepInform(USB::Connector& usb, USB::Filer& file);
+bool upgrepData(USB::Connector& usb, USB::Filer& file);
+bool upgrepStatus(USB::Connector& usb);
 void controlLoop(USB::Connector& usb, USB::Filer& file);
 
+USB::Filer file;
 int main(void)
-{     
-    std::cout << "Hello World!\n";
+{  
+    try
+    {
+        init();
+        USB::Connector usb;
+        controlLoop(usb, file); 
+    }
+    catch (const std::exception & e)     //捕获异常
+    {
+        puts(e.what());
+    }
 
-
-    while (1);
-    return 0;
+    cleanAndExit(0);
 }
 
 void init()
@@ -60,12 +69,40 @@ void controlLoop(USB::Connector& usb,USB::Filer& file)
             Sleep(1000);
             continue;
         }
+        puts("Device connected!");
+
         if(!informUpgrepStart(usb))
         {
-            puts("device be missing...");
+            puts("Device be missing...");
             Sleep(1000);
             continue;
         }
+        puts("Receive STM32 ready upgrep pack");
+
+        if (!upgrepInform(usb,file))
+        {
+            puts("Send inform failed...");
+            Sleep(1000);
+            continue;
+        }
+        puts("Send information pack");
+
+        if (!upgrepData(usb,file))
+        {
+            puts("send data failed...");
+            Sleep(1000);
+            continue;
+        }
+        puts("Send all data pack");
+
+        if(!upgrepStatus(usb))
+        {
+            puts("checksum is error");
+            Sleep(1000);
+            continue;
+        }
+        puts("checksum is OK");
+        return ;
     }
 
 }
@@ -75,11 +112,13 @@ bool informUpgrepStart(USB::Connector& usb)
     BYTE Receive[USB::Connector::MAX_PACK_SIZE];
     BYTE Send[USB::Connector::MAX_PACK_SIZE];
     memset(Send,0,sizeof(Send));
+
     Send[0] = USB::Connector::UPGRED_PACK;
     while(true)
     {
         Sleep(1000);       
         int actualLen = 0;
+        memset(Receive, 0, sizeof(Receive));
         USB::Error err = usb.Read(Receive,sizeof(Receive),&actualLen);
         if (USB::Error::DISCONNECTED == err)
         {
@@ -91,10 +130,6 @@ bool informUpgrepStart(USB::Connector& usb)
             {
                 return true;
             }
-            else
-            {
-                continue;
-            }
         }
 
         err = usb.Write(Send, sizeof(Send));
@@ -102,25 +137,72 @@ bool informUpgrepStart(USB::Connector& usb)
         {
             return false;
         }
-        if (USB::Error::OK != err)
-        {
-            continue;
-        }
+
     }
 }
 
-bool UpgrepData(USB::Connector& usb, USB::Filer& file)
+bool upgrepInform(USB::Connector& usb, USB::Filer& file)
+{
+    BYTE Receive[USB::Connector::MAX_PACK_SIZE];
+    BYTE Send[USB::Connector::MAX_PACK_SIZE];
+    memset(Send,0,sizeof(Send));
+
+    Send[0] = usb.UPGRED_INFORM_PACK;
+    if (true == file.getBin(path)) {
+        Send[1] = (INT8)(file.Size >> 8*3);
+        Send[2] = (INT8)(file.Size << 8 >> 8 * 3);
+        Send[3] = (INT8)(file.Size << 8*2 >> 8 * 3);
+        Send[4] = (INT8)(file.Size << 8 * 3 >> 8 * 3);
+        Send[5] = file.Checksum;
+        while(true)
+        {
+            Sleep(1000);
+            memset(Receive, 0, sizeof(Receive));
+            USB::Error err = usb.Write(Send,sizeof(Send));
+            if (USB::Error::DISCONNECTED == err)
+            {
+                return false;
+            }
+            if (USB::Error::OK != err)
+            {
+                continue;
+            }
+
+            int actualLen = 0;
+            err = usb.Read(Receive,sizeof(Receive),&actualLen);
+            if (USB::Error::DISCONNECTED == err)
+            {
+                return false;
+            }
+            if (USB::Error::OK != err)
+            {
+                continue;
+            }
+            if (usb.ACK_PACK == Receive[0])
+            {
+                return true;
+            }       
+        }
+    }
+
+}
+
+
+bool upgrepData(USB::Connector& usb, USB::Filer& file)
 {
     USB::Error err;
     BYTE Receive[USB::Connector::MAX_PACK_SIZE];
     BYTE Send[USB::Connector::MAX_PACK_SIZE];
+    memset(Send, 0, sizeof(Send));
     int actualLen = 0;
     Send[0] = usb.UPGRED_DATA_PACK;
 
-    while (true)
+    while (file.Index/(usb.MAX_PACK_SIZE - 3) < file.Size/(usb.MAX_PACK_SIZE - 3))  //发送61字节全部被沾满的包 
     {
-        memcpy(file.Buffer + file.Index, Send + 1, sizeof(Send) - 1);
-        file.Index += (sizeof(Send) - 1);
+        Send[1] = (INT8)(file.PackNum >> 8);
+        Send[2] = (INT8)(file.PackNum << 8 >> 8);
+        memset(Receive, 0, sizeof(Receive));
+        memcpy(Send + 3,file.Buffer + file.Index,sizeof(Send) - 3);
         err = usb.Write(Send, sizeof(Send));
         if (USB::Error::DISCONNECTED == err)
         {
@@ -134,17 +216,83 @@ bool UpgrepData(USB::Connector& usb, USB::Filer& file)
         }
         if (USB::Error::TIMEOUT == err)     
         {
-            file.Index -= (sizeof(Send) - 1);  //超时说明上一包没有收到 所以重新发送
             continue;
+        }
+        
+        if (usb.ACK_PACK == Receive[0])        //发送成功，包的编号+1，buffer索引+61
+        {
+        printf("Send num %d is ok\n", file.PackNum);
+        file.PackNum++;
+        file.Index += (sizeof(Send) - 3);
+        }
+    }
+
+    if(file.Size%(usb.MAX_PACK_SIZE - 3) == 0)      //如果总字节数是 61 的整数倍 发送结束
+    {
+        return true;
+    }
+
+    while (true)                          //发送余下的 61余数个字节的数据
+    {
+        Send[1] = (INT8)(file.PackNum >> 8);
+        Send[2] = (INT8)(file.PackNum << 8 >> 8);
+        memset(Receive, 0, sizeof(Receive));
+        memcpy(Send + 3, file.Buffer + file.Index, (file.Size % (usb.MAX_PACK_SIZE - 3)));
+        err = usb.Write(Send, sizeof(Send));
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        err = usb.Read(Receive, sizeof(Receive), &actualLen);
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        if (USB::Error::TIMEOUT == err)
+        {
+            continue;
+        }
+        if (usb.ACK_PACK == Receive[0])          //发送成功，包的编号+1，buffer索引+61
+        {
+            printf("Send num %d is ok\n", file.PackNum);
+            return true;
         }
 
     }
 
-
 }
 
 
+bool upgrepStatus(USB::Connector& usb)
+{
+    BYTE Receive[USB::Connector::MAX_PACK_SIZE];
+    USB::Error err;
+    memset(Receive,0,sizeof(Receive));
+    int actualLen = 0;
+    while (true)
+    {
+        err = usb.Read(Receive, sizeof(Receive), &actualLen);
+        if (USB::Error::DISCONNECTED == err)
+        {
+            return false;
+        }
+        if (USB::Error::TIMEOUT == err)
+        {
+            continue;
+        }
+        if (usb.UPGRED_STATUS_PACK == Receive[0])
+        {
+            if (0 == Receive[1])        // 0 为升级成功
+            {
+                return true;
+            } 
+            return false;     
+            
+        }
 
+    }
+
+}
 
 
 // Run program: Ctrl + F5 or Debug > Start Without Debugging menu

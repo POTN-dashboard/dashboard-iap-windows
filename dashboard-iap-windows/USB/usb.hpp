@@ -55,8 +55,9 @@ class Filer
 {
 public:
     UINT8 Buffer[128 * 1024];
-    UINT8 Index;
-    UINT8 Size;
+    UINT32 Index;
+    UINT32 Size;
+    INT16 PackNum;
     UINT8 Checksum;
 
 
