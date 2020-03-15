@@ -97,11 +97,10 @@ void controlLoop(USB::Connector& usb,USB::Filer& file)
 
         if(!upgrepStatus(usb))
         {
-            puts("checksum is error");
             Sleep(1000);
             continue;
         }
-        puts("checksum is OK");
+        puts("upgrep is OK");
         return ;
     }
 
@@ -221,9 +220,18 @@ bool upgrepData(USB::Connector& usb, USB::Filer& file)
         
         if (usb.ACK_PACK == Receive[0])        //发送成功，包的编号+1，buffer索引+61
         {
-        printf("Send num %d is ok\n", file.PackNum);
-        file.PackNum++;
-        file.Index += (sizeof(Send) - 3);
+            if (0 == Receive[1])
+            {
+                printf("Send num %d is ok\n", file.PackNum);
+                file.PackNum++;
+                file.Index += (sizeof(Send) - 3);
+
+            }
+            else
+            {
+                printf("Send num %d is fail\n", file.PackNum);
+            }
+
         }
     }
 
@@ -254,10 +262,17 @@ bool upgrepData(USB::Connector& usb, USB::Filer& file)
         }
         if (usb.ACK_PACK == Receive[0])          //发送成功，包的编号+1，buffer索引+61
         {
-            printf("Send num %d is ok\n", file.PackNum);
-            return true;
-        }
+            if(0 == Receive[1])
+            {
+                printf("Send num %d is ok\n", file.PackNum);
+                return true;
+            }
+            else
+            {
+                printf("Send num %d is fail\n", file.PackNum);
+            }
 
+        }
     }
 
 }
@@ -284,8 +299,10 @@ bool upgrepStatus(USB::Connector& usb)
         {
             if (0 == Receive[1])        // 0 为升级成功
             {
+                puts("checksum is OK");
                 return true;
             } 
+            puts("checksum is error");
             return false;     
             
         }
