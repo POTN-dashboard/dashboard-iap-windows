@@ -71,6 +71,7 @@ void controlLoop(USB::Connector& usb,USB::Filer& file)
         }
         puts("Device connected!");
 
+
         if(!informUpgrepStart(usb))
         {
             puts("Device be missing...");

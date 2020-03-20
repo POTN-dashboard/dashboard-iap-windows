@@ -142,6 +142,11 @@ bool Filer::getBin(const char* path)
         Size = ftell(fp);    //获取文件大小
         rewind(fp);		//重新恢复位置指针的位置，回到文件的开头
         printf("this bin is total %d bytes\n", Size);
+        if (Size > 1024 * (128 - 16)) {
+            puts("the bin is too big than (128-16)K");
+            system("pause");       // DOS调用 黑框框不会闪退 
+            exit(0);
+        }
         fread(Buffer, 1, Size, fp);
 
         for(UINT32 i = 0; i < Size; i++){
